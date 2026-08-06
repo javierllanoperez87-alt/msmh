@@ -25,14 +25,15 @@ MAX_POB_SATURACION = 300
 # ==========================================
 @st.cache_data(show_spinner=False)
 def descargar_base_datos(url, nombre_ccaa):
-    # Crea una carpeta temporal oculta en el servidor para guardar los mapas
     os.makedirs("datos_cache", exist_ok=True)
     ruta_local = f"datos_cache/{nombre_ccaa.replace(' ', '_')}.gpkg"
     
-    # Si el archivo no existe físicamente en el servidor, lo descarga de Hugging Face
     if not os.path.exists(ruta_local):
-        urllib.request.urlretrieve(url, ruta_local)
-        
+        respuesta = requests.get(url, stream=True)
+        with open(ruta_local, 'wb') as archivo:
+            for bloque in respuesta.iter_content(chunk_size=8192):
+                archivo.write(bloque)
+                
     return ruta_local
 
 def obtener_datos_espaciales(lugar, archivo_local):
