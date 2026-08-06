@@ -27,17 +27,17 @@ MAX_POB_SATURACION = 300
 def descargar_base_datos(url, nombre_ccaa):
     os.makedirs("datos_cache", exist_ok=True)
     ruta_local = f"datos_cache/{nombre_ccaa.replace(' ', '_')}.gpkg"
-    
+
     # Cabecera para simular un navegador real y evitar el bloqueo de Hugging Face
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-    
+
     if not os.path.exists(ruta_local):
         respuesta = requests.get(url, stream=True, headers=headers)
         with open(ruta_local, 'wb') as archivo:
             for bloque in respuesta.iter_content(chunk_size=8192):
                 if bloque:
                     archivo.write(bloque)
-                
+
     return ruta_local
 
 def obtener_datos_espaciales(lugar, archivo_local):
