@@ -6,3 +6,4 @@ numpy
 folium
 streamlit_folium
 branca
+requests
