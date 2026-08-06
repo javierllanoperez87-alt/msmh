@@ -1,0 +1,10 @@
+streamlit
+osmnx
+geopandas
+pandas
+numpy
+folium
+streamlit_folium
+branca
+urllib.request
+os
