@@ -8,6 +8,15 @@ from streamlit_folium import st_folium
 import os
 from branca.element import Template, MacroElement
 
+@st.cache_data
+def cargar_mapa_comunidad(url):
+    # Esta función solo se ejecuta la primera vez; luego lee de la memoria caché
+    mapa = gpd.read_file(url)
+    return mapa
+
+# Uso en el código principal
+mapa_seleccionado = cargar_mapa_comunidad(BASES_DE_DATOS_CCAA["Comunidad de Madrid"])
+
 # Aumentamos el tiempo de espera de OSM
 ox.settings.timeout = 180 
 
@@ -253,10 +262,7 @@ BASES_DE_DATOS_CCAA = {
     "Murcia":"https://huggingface.co/datasets/BaracanBaea/TFM/resolve/main/edificios_murcia.gpkg?download=true",
     "Navarra":"https://huggingface.co/datasets/BaracanBaea/TFM/resolve/main/edificios_navarra.gpkg?download=true",
     "País Vasco":"https://huggingface.co/datasets/BaracanBaea/TFM/resolve/main/edificios_paisvasco.gpkg?download=true",
-    "Valencia":"https://huggingface.co/datasets/BaracanBaea/TFM/resolves/main/edificios_valencia.gpkg?download=true",
-    "Archivo Local (Madrid)": "edificios_madrid.gpkg",
-    "Archivo Local (CLM)": "edificios_clm.gpkg",
-    "Archivo Local (CyL)": "edificios_cyl.gpkg" 
+    "Valencia":"https://huggingface.co/datasets/BaracanBaea/TFM/resolves/main/edificios_valencia.gpkg?download=true" 
 }
 
 ccaa_seleccionada = st.sidebar.selectbox(
