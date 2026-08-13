@@ -63,20 +63,7 @@ def obtener_datos_espaciales(lugar, archivo_local):
     edificios_proyectados = gpd.clip(edificios_gdf, distrito_gdf)
     buffer_edificios = edificios_proyectados.buffer(15).unary_union
 
-    # 4. Capas menores (Internet)
-    try:
-        agua_gdf = ox.features_from_place(lugar, tags={'waterway': True, 'natural': 'water'})
-        buffer_inundacion = agua_gdf.to_crs(crs_proyectado).buffer(50).unary_union if not agua_gdf.empty else gpd.GeoSeries().unary_union
-    except:
-        buffer_inundacion = gpd.GeoSeries().unary_union
-
-    try:
-        usos_incompatibles = ox.features_from_place(lugar, tags={'landuse': ['industrial', 'railway', 'military']})
-        buffer_urbanismo = usos_incompatibles.to_crs(crs_proyectado).unary_union if not usos_incompatibles.empty else gpd.GeoSeries().unary_union
-    except:
-        buffer_urbanismo = gpd.GeoSeries().unary_union
-
-    buffer_hidrogeologia = gpd.GeoSeries().unary_union
+    
 
     # 5. Cálculo de parcelas aptas
     exclusion_total = buffer_edificios.union(buffer_inundacion).union(buffer_urbanismo).union(buffer_hidrogeologia)
@@ -87,14 +74,7 @@ def obtener_datos_espaciales(lugar, archivo_local):
     parcelas_aptas = parcelas_disponibles[parcelas_disponibles['area_m2'] >= 200].copy()
 
     # 6. Parques y Lógica Difusa
-    etiquetas_verdes = {'leisure': 'park', 'landuse': ['grass', 'recreation_ground']}
-    try:
-        parques_gdf = ox.features_from_place(lugar, tags=etiquetas_verdes)
-        parques_proyectados = parques_gdf[parques_gdf.geometry.type.isin(['Polygon', 'MultiPolygon'])].to_crs(crs_proyectado)
-        masa_parques = parques_proyectados.unary_union
-    except:
-        parques_proyectados = gpd.GeoDataFrame(geometry=[], crs=crs_proyectado)
-        masa_parques = gpd.GeoSeries().unary_union
+   
 
     parcelas_aptas['distancia_parque_m'] = parcelas_aptas.geometry.distance(masa_parques) if not parques_proyectados.empty else 1000
     
