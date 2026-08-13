@@ -54,7 +54,7 @@ def obtener_datos_espaciales(lugar, archivo_local):
     caja_gps = tuple(frontera_oficial.total_bounds)
     
     # 2. Edificios (Lectura filtrada: SOLO lee del disco duro lo que entra en la caja)
-    edificios_gdf = gpd.read_file(archivo_local, bbox=caja_gps)
+    edificios_gdf = gpd.read_file(archivo_local)
     
     edificios_gdf = edificios_gdf[edificios_gdf.geometry.type.isin(['Polygon', 'MultiPolygon'])]
     edificios_gdf = edificios_gdf.to_crs(crs_proyectado)
