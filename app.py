@@ -23,6 +23,9 @@ MAX_POB_SATURACION = 300
 # ==========================================
 # MOTOR 1: ADQUISICIÓN HÍBRIDA HIPER-OPTIMIZADA
 # ==========================================
+import requests
+import os
+
 @st.cache_data(show_spinner=False)
 def descargar_base_datos(url, nombre_ccaa):
     os.makedirs("datos_cache", exist_ok=True)
