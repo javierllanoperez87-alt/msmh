@@ -5,6 +5,5 @@ pandas
 numpy
 folium
 streamlit_folium
-os
 branca
 requests
