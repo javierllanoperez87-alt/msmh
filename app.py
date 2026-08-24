@@ -97,7 +97,7 @@ def obtener_datos_espaciales(lugar, ruta_local_gpkg):
         parques_proyectados = gpd.GeoDataFrame(geometry=[], crs=crs_proyectado)
         masa_parques = gpd.GeoSeries().unary_union
 
-    parcelas_aptas['distancia_parque_m'] = parcelas_aptas.geometry.distance(masa_parques) if not parques_proyectados.empty else 1000
+    parcelas_aptas['distancia_parque_m'] = parcelas_aptas.geometry.distance(masa_parques) if not parques_proyectados.empty else 400
     
     def calcular_smoothstep_inverso(x, min_val, max_val):
         if x <= min_val: return 1.0
