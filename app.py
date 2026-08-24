@@ -87,26 +87,21 @@ def obtener_datos_espaciales(lugar, ruta_local_gpkg):
     parcelas_disponibles['area_m2'] = parcelas_disponibles.geometry.area
     parcelas_aptas = parcelas_disponibles[parcelas_disponibles['area_m2'] >= 200].copy()
 
-    # 6. Parques y Lógica Difusa (Restaurado)
+    # 6. Parques y Lógica Difusa (Petición geométrica optimizada para Cloud)
     etiquetas_verdes = {'leisure': 'park', 'landuse': ['grass', 'recreation_ground']}
     try:
-        parques_gdf = ox.features_from_place(lugar, tags=etiquetas_verdes)
+        # Usamos el polígono exacto en coordenadas GPS en lugar de buscar texto (evita Rate Limiting)
+        poligono_gps = frontera_oficial.geometry.iloc[0]
+        parques_gdf = ox.features_from_polygon(poligono_gps, tags=etiquetas_verdes)
         parques_proyectados = parques_gdf[parques_gdf.geometry.type.isin(['Polygon', 'MultiPolygon'])].to_crs(crs_proyectado)
         masa_parques = parques_proyectados.unary_union
     except:
         parques_proyectados = gpd.GeoDataFrame(geometry=[], crs=crs_proyectado)
         masa_parques = gpd.GeoSeries().unary_union
 
-    parcelas_aptas['distancia_parque_m'] = parcelas_aptas.geometry.distance(masa_parques) if not parques_proyectados.empty else 999
-    
-    def calcular_smoothstep_inverso(x, min_val, max_val):
-        if x <= min_val: return 1.0
-        if x >= max_val: return 0.0
-        t = (x - min_val) / (max_val - min_val)
-        return 1.0 - (t * t * (3 - 2 * t))
-
-    parcelas_aptas['score_reut'] = parcelas_aptas['distancia_parque_m'].apply(lambda x: calcular_smoothstep_inverso(x, 400, 1000))
-    
+    # Volvemos al rigor matemático estricto: Si por algún fallo crítico la nube no lee los parques,
+    # penalizamos con 1000m (para no generar falsos positivos en el MCDA).
+    parcelas_aptas['distancia_parque_m'] = parcelas_aptas.geometry.distance(masa_parques) if not parques_proyectados.empty else 1000
     # LÓGICA POBLACIONAL
     scores_poblacion = []
     poblacion_absoluta = [] 
