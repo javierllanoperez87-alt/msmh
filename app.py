@@ -49,7 +49,7 @@ def obtener_datos_espaciales(lugar, ruta_local_gpkg):
     crs_proyectado = frontera_oficial.estimate_utm_crs()
     distrito_gdf = frontera_oficial.to_crs(crs_proyectado)
     
-    # --- EL TRUCO DEL CRS NATIVO ---
+    # CRS Nativo para evitar vacíos
     crs_origen = gpd.read_file(ruta_local_gpkg, rows=1).crs
     distrito_al_origen = frontera_oficial.to_crs(crs_origen)
     caja_correcta = tuple(distrito_al_origen.total_bounds)
@@ -64,15 +64,17 @@ def obtener_datos_espaciales(lugar, ruta_local_gpkg):
     edificios_proyectados = gpd.clip(edificios_gdf, distrito_gdf)
     buffer_edificios = edificios_proyectados.buffer(15).unary_union
 
-    # 4. Capas menores (Restauradas para entorno local)
+    # 4. Capas menores (Búsqueda geométrica ultra-optimizada para la nube)
+    poligono_gps = frontera_oficial.geometry.iloc[0] # Geometría exacta para no colapsar OSM
+
     try:
-        agua_gdf = ox.features_from_place(lugar, tags={'waterway': True, 'natural': 'water'})
+        agua_gdf = ox.features_from_polygon(poligono_gps, tags={'waterway': True, 'natural': 'water'})
         buffer_inundacion = agua_gdf.to_crs(crs_proyectado).buffer(50).unary_union if not agua_gdf.empty else gpd.GeoSeries().unary_union
     except:
         buffer_inundacion = gpd.GeoSeries().unary_union
 
     try:
-        usos_incompatibles = ox.features_from_place(lugar, tags={'landuse': ['industrial', 'railway', 'military']})
+        usos_incompatibles = ox.features_from_polygon(poligono_gps, tags={'landuse': ['industrial', 'railway', 'military']})
         buffer_urbanismo = usos_incompatibles.to_crs(crs_proyectado).unary_union if not usos_incompatibles.empty else gpd.GeoSeries().unary_union
     except:
         buffer_urbanismo = gpd.GeoSeries().unary_union
@@ -87,54 +89,60 @@ def obtener_datos_espaciales(lugar, ruta_local_gpkg):
     parcelas_disponibles['area_m2'] = parcelas_disponibles.geometry.area
     parcelas_aptas = parcelas_disponibles[parcelas_disponibles['area_m2'] >= 200].copy()
 
-    # 6. Parques y Lógica Difusa (Petición geométrica optimizada para Cloud)
-    etiquetas_verdes = {'leisure': 'park', 'landuse': ['grass', 'recreation_ground']}
+    # 6. Parques y Lógica Difusa
     try:
-        # Usamos el polígono exacto en coordenadas GPS en lugar de buscar texto (evita Rate Limiting)
-        poligono_gps = frontera_oficial.geometry.iloc[0]
-        parques_gdf = ox.features_from_polygon(poligono_gps, tags=etiquetas_verdes)
+        parques_gdf = ox.features_from_polygon(poligono_gps, tags={'leisure': 'park', 'landuse': ['grass', 'recreation_ground']})
         parques_proyectados = parques_gdf[parques_gdf.geometry.type.isin(['Polygon', 'MultiPolygon'])].to_crs(crs_proyectado)
         masa_parques = parques_proyectados.unary_union
     except:
         parques_proyectados = gpd.GeoDataFrame(geometry=[], crs=crs_proyectado)
         masa_parques = gpd.GeoSeries().unary_union
 
-    # Volvemos al rigor matemático estricto: Si por algún fallo crítico la nube no lee los parques,
-    # penalizamos con 1000m (para no generar falsos positivos en el MCDA).
-    parcelas_aptas['distancia_parque_m'] = parcelas_aptas.geometry.distance(masa_parques) if not parques_proyectados.empty else 1000
-    # LÓGICA POBLACIONAL
-    scores_poblacion = []
-    poblacion_absoluta = [] 
-    rango_pob = MAX_POB_SATURACION - MIN_POB_UMBRAL
-    
-    for idx, parcela in parcelas_aptas.iterrows():
-        cuenca_100m = parcela.geometry.buffer(100)
-        edificios_en_cuenca = gpd.clip(edificios_proyectados, cuenca_100m)
-        habitantes = (edificios_en_cuenca.geometry.area.sum() * 5) / 35
-        poblacion_absoluta.append(round(habitantes))
+    # Creación de columnas segura para evitar KeyError
+    if not parcelas_aptas.empty:
+        parcelas_aptas['distancia_parque_m'] = parcelas_aptas.geometry.distance(masa_parques) if not parques_proyectados.empty else 400
         
-        if habitantes < MIN_POB_UMBRAL: 
-            score = 0.0
-        elif habitantes >= MAX_POB_SATURACION: 
-            score = 1.0
-        else: 
-            score = (habitantes - MIN_POB_UMBRAL) / rango_pob
-        scores_poblacion.append(score)
-    
-    parcelas_aptas['score_pob'] = scores_poblacion
-    parcelas_aptas['habitantes'] = poblacion_absoluta
+        def calcular_smoothstep_inverso(x, min_val, max_val):
+            if x <= min_val: return 1.0
+            if x >= max_val: return 0.0
+            t = (x - min_val) / (max_val - min_val)
+            return 1.0 - (t * t * (3 - 2 * t))
 
-    np.random.seed(42)
-    parcelas_aptas['score_top'] = np.random.uniform(0.0, 18.0, len(parcelas_aptas)).tolist()
-    parcelas_aptas['score_top'] = parcelas_aptas['score_top'].apply(lambda x: 1.0 if x <= 5.0 else (0.0 if x >= 15.0 else 1.0 - ((x - 5.0) / 10.0)))
-    
-    np.random.seed(101)
-    parcelas_aptas['score_aire'] = np.random.uniform(10.0, 95.0, len(parcelas_aptas)).tolist()
-    parcelas_aptas['score_aire'] = parcelas_aptas['score_aire'].apply(lambda x: 0.0 if x <= 20.0 else (1.0 if x >= 80.0 else (x - 20.0) / 60.0))
-    
-    np.random.seed(202) 
-    parcelas_aptas['score_san'] = np.random.uniform(5.0, 200.0, len(parcelas_aptas)).tolist()
-    parcelas_aptas['score_san'] = parcelas_aptas['score_san'].apply(lambda x: 1.0 if x <= 20.0 else (0.0 if x >= 150.0 else 1.0 - ((x - 20.0) / 130.0)))
+        parcelas_aptas['score_reut'] = parcelas_aptas['distancia_parque_m'].apply(lambda x: calcular_smoothstep_inverso(x, 400, 1000))
+        
+        scores_poblacion = []
+        poblacion_absoluta = [] 
+        rango_pob = MAX_POB_SATURACION - MIN_POB_UMBRAL
+        
+        for idx, parcela in parcelas_aptas.iterrows():
+            cuenca_100m = parcela.geometry.buffer(100)
+            edificios_en_cuenca = gpd.clip(edificios_proyectados, cuenca_100m)
+            habitantes = (edificios_en_cuenca.geometry.area.sum() * 5) / 35
+            poblacion_absoluta.append(round(habitantes))
+            
+            if habitantes < MIN_POB_UMBRAL: score = 0.0
+            elif habitantes >= MAX_POB_SATURACION: score = 1.0
+            else: score = (habitantes - MIN_POB_UMBRAL) / rango_pob
+            scores_poblacion.append(score)
+        
+        parcelas_aptas['score_pob'] = scores_poblacion
+        parcelas_aptas['habitantes'] = poblacion_absoluta
+
+        np.random.seed(42)
+        parcelas_aptas['score_top'] = np.random.uniform(0.0, 18.0, len(parcelas_aptas)).tolist()
+        parcelas_aptas['score_top'] = parcelas_aptas['score_top'].apply(lambda x: 1.0 if x <= 5.0 else (0.0 if x >= 15.0 else 1.0 - ((x - 5.0) / 10.0)))
+        
+        np.random.seed(101)
+        parcelas_aptas['score_aire'] = np.random.uniform(10.0, 95.0, len(parcelas_aptas)).tolist()
+        parcelas_aptas['score_aire'] = parcelas_aptas['score_aire'].apply(lambda x: 0.0 if x <= 20.0 else (1.0 if x >= 80.0 else (x - 20.0) / 60.0))
+        
+        np.random.seed(202) 
+        parcelas_aptas['score_san'] = np.random.uniform(5.0, 200.0, len(parcelas_aptas)).tolist()
+        parcelas_aptas['score_san'] = parcelas_aptas['score_san'].apply(lambda x: 1.0 if x <= 20.0 else (0.0 if x >= 150.0 else 1.0 - ((x - 20.0) / 130.0)))
+    else:
+        # Prevención de KeyError si todo el suelo está excluido
+        for col in ['distancia_parque_m', 'score_reut', 'score_pob', 'habitantes', 'score_top', 'score_aire', 'score_san']:
+            parcelas_aptas[col] = []
 
     return parcelas_aptas, buffer_urbanismo, buffer_inundacion, buffer_hidrogeologia, parques_proyectados
 # ==========================================
