@@ -100,7 +100,7 @@ def obtener_datos_espaciales(lugar, ruta_local_gpkg):
 
     # Creación de columnas segura para evitar KeyError
     if not parcelas_aptas.empty:
-        parcelas_aptas['distancia_parque_m'] = parcelas_aptas.geometry.distance(masa_parques) if not parques_proyectados.empty else 999
+        parcelas_aptas['distancia_parque_m'] = parcelas_aptas.geometry.distance(masa_parques) if not parques_proyectados.empty else 1000
         
         def calcular_smoothstep_inverso(x, min_val, max_val):
             if x <= min_val: return 1.0
