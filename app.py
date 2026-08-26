@@ -12,9 +12,6 @@ from branca.element import Template, MacroElement
 # Aumentamos el tiempo de espera de OSM
 ox.settings.timeout = 180 
 
-# Redirigimos las peticiones a un servidor espejo alternativo para evadir el Rate Limiting
-ox.settings.overpass_endpoint = "https://lz4.overpass-api.de/api/interpreter"
-
 st.set_page_config(page_title="MSMH Humedales", page_icon="🌿", layout="wide")
 
 # ==========================================
