@@ -108,7 +108,7 @@ def obtener_datos_espaciales(lugar, ruta_local_gpkg):
             t = (x - min_val) / (max_val - min_val)
             return 1.0 - (t * t * (3 - 2 * t))
 
-        parcelas_aptas['score_reut'] = parcelas_aptas['distancia_parque_m'].apply(lambda x: calcular_smoothstep_inverso(x, 400, 1000))
+        parcelas_aptas['score_reut'] = parcelas_aptas['distancia_parque_m'].apply(lambda x: calcular_smoothstep_inverso(x, 400, 1001))
         
         scores_poblacion = []
         poblacion_absoluta = [] 
