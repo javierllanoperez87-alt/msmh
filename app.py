@@ -62,26 +62,33 @@ def obtener_datos_espaciales(lugar, ruta_local_gpkg):
     
     # 3. Recorte Espacial exacto
     edificios_proyectados = gpd.clip(edificios_gdf, distrito_gdf)
-    buffer_edificios = edificios_proyectados.buffer(15).unary_union
+    buffer_edificios = edificios_proyectados.buffer(15).union_all()
 
     # 4. Capas menores (Restauradas para entorno local)
-    
+    poligono_gps = frontera_oficial.geometry.iloc[0]
     try:
         agua_gdf = ox.features_from_place(lugar, tags={'waterway': True, 'natural': 'water'})
-        buffer_inundacion = agua_gdf.to_crs(crs_proyectado).buffer(50).unary_union if not agua_gdf.empty else gpd.GeoSeries().unary_union
+        buffer_inundacion = agua_gdf.to_crs(crs_proyectado).buffer(50).union_all() if not agua_gdf.empty else gpd.GeoSeries().union_all()
     except:
-        buffer_inundacion = gpd.GeoSeries().unary_union
+        buffer_inundacion = gpd.GeoSeries().union_all()
 
     try:
         usos_incompatibles = ox.features_from_place(lugar, tags={'landuse': ['industrial', 'railway', 'military']})
-        buffer_urbanismo = usos_incompatibles.to_crs(crs_proyectado).unary_union if not usos_incompatibles.empty else gpd.GeoSeries().unary_union
+        buffer_urbanismo = usos_incompatibles.to_crs(crs_proyectado).union_all() if not usos_incompatibles.empty else gpd.GeoSeries().union_all()
     except:
-        buffer_urbanismo = gpd.GeoSeries().unary_union
+        buffer_urbanismo = gpd.GeoSeries().union_all()
 
-    buffer_hidrogeologia = gpd.GeoSeries().unary_union
+    buffer_hidrogeologia = gpd.GeoSeries().union_all()
+    try:
+        # Descargamos la red viaria para "cortar" el mapa continuo en manzanas
+        vias_gdf = ox.features_from_polygon(poligono_gps, tags={'highway': True})
+        # Un buffer de 4 metros simula el ancho de la calle y actúa como cuchillo espacial
+        buffer_vias = vias_gdf.to_crs(crs_proyectado).buffer(4).union_all() if not vias_gdf.empty else gpd.GeoSeries().union_all()
+    except:
+        buffer_vias = gpd.GeoSeries().union_all()
 
     # 5. Cálculo de parcelas aptas
-    exclusion_total = buffer_edificios.union(buffer_inundacion).union(buffer_urbanismo).union(buffer_hidrogeologia)
+    exclusion_total = buffer_edificios.union(buffer_inundacion).union(buffer_urbanismo).union(buffer_hidrogeologia).union(buffer_vias)
     suelo_disponible_geom = distrito_gdf.geometry.difference(exclusion_total).item() 
     
     parcelas_disponibles = gpd.GeoDataFrame(geometry=[suelo_disponible_geom], crs=crs_proyectado).explode(index_parts=False).reset_index(drop=True)
@@ -93,10 +100,10 @@ def obtener_datos_espaciales(lugar, ruta_local_gpkg):
     try:
         parques_gdf = ox.features_from_place(lugar, tags=etiquetas_verdes)
         parques_proyectados = parques_gdf[parques_gdf.geometry.type.isin(['Polygon', 'MultiPolygon'])].to_crs(crs_proyectado)
-        masa_parques = parques_proyectados.unary_union
+        masa_parques = parques_proyectados.union_all()
     except:
         parques_proyectados = gpd.GeoDataFrame(geometry=[], crs=crs_proyectado)
-        masa_parques = gpd.GeoSeries().unary_union
+        masa_parques = gpd.GeoSeries().union_all()
 
     parcelas_aptas['distancia_parque_m'] = parcelas_aptas.geometry.distance(masa_parques) if not parques_proyectados.empty else 1000
     
