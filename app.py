@@ -178,7 +178,7 @@ def calcular_y_mapear(parcelas_aptas, b_urb, b_inu, b_hidro, parques, w_reut, w_
     centro_lat = parcelas_4326.geometry.centroid.y.mean()
     centro_lon = parcelas_4326.geometry.centroid.x.mean()
 
-    m = folium.Map(location=[centro_lat, centro_lon], zoom_start=13, tiles='cartodbpositron')
+    m = folium.Map(location=[centro_lat, centro_lon], zoom_start=13, tiles='OpenStreetMap', control_scale=True)
 
     if not isinstance(b_urb, gpd.GeoSeries) and not b_urb.is_empty:
         folium.GeoJson(gpd.GeoSeries([b_urb]).set_crs(parcelas_aptas.crs).to_crs(epsg=4326), 
