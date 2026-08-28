@@ -49,7 +49,7 @@ def obtener_datos_espaciales(lugar, ruta_local_gpkg):
     crs_proyectado = frontera_oficial.estimate_utm_crs()
     distrito_gdf = frontera_oficial.to_crs(crs_proyectado)
     
-    # CRS Nativo para evitar vacíos
+    # --- EL TRUCO DEL CRS NATIVO ---
     crs_origen = gpd.read_file(ruta_local_gpkg, rows=1).crs
     distrito_al_origen = frontera_oficial.to_crs(crs_origen)
     caja_correcta = tuple(distrito_al_origen.total_bounds)
@@ -64,17 +64,16 @@ def obtener_datos_espaciales(lugar, ruta_local_gpkg):
     edificios_proyectados = gpd.clip(edificios_gdf, distrito_gdf)
     buffer_edificios = edificios_proyectados.buffer(15).unary_union
 
-    # 4. Capas menores (Búsqueda geométrica ultra-optimizada para la nube)
-    poligono_gps = frontera_oficial.geometry.iloc[0] # Geometría exacta para no colapsar OSM
-
+    # 4. Capas menores (Restauradas para entorno local)
+    
     try:
-        agua_gdf = ox.features_from_polygon(poligono_gps, tags={'waterway': True, 'natural': 'water'})
+        agua_gdf = ox.features_from_place(lugar, tags={'waterway': True, 'natural': 'water'})
         buffer_inundacion = agua_gdf.to_crs(crs_proyectado).buffer(50).unary_union if not agua_gdf.empty else gpd.GeoSeries().unary_union
     except:
         buffer_inundacion = gpd.GeoSeries().unary_union
 
     try:
-        usos_incompatibles = ox.features_from_polygon(poligono_gps, tags={'landuse': ['industrial', 'railway', 'military']})
+        usos_incompatibles = ox.features_from_place(lugar, tags={'landuse': ['industrial', 'railway', 'military']})
         buffer_urbanismo = usos_incompatibles.to_crs(crs_proyectado).unary_union if not usos_incompatibles.empty else gpd.GeoSeries().unary_union
     except:
         buffer_urbanismo = gpd.GeoSeries().unary_union
@@ -89,60 +88,59 @@ def obtener_datos_espaciales(lugar, ruta_local_gpkg):
     parcelas_disponibles['area_m2'] = parcelas_disponibles.geometry.area
     parcelas_aptas = parcelas_disponibles[parcelas_disponibles['area_m2'] >= 200].copy()
 
-    # 6. Parques y Lógica Difusa
+    # 6. Parques y Lógica Difusa (Restaurado)
+    etiquetas_verdes = {'leisure': 'park', 'landuse': ['grass', 'recreation_ground']}
     try:
-        parques_gdf = ox.features_from_polygon(poligono_gps, tags={'leisure': 'park', 'landuse': ['grass', 'recreation_ground']})
+        parques_gdf = ox.features_from_place(lugar, tags=etiquetas_verdes)
         parques_proyectados = parques_gdf[parques_gdf.geometry.type.isin(['Polygon', 'MultiPolygon'])].to_crs(crs_proyectado)
         masa_parques = parques_proyectados.unary_union
     except:
         parques_proyectados = gpd.GeoDataFrame(geometry=[], crs=crs_proyectado)
         masa_parques = gpd.GeoSeries().unary_union
 
-    # Creación de columnas segura para evitar KeyError
-    if not parcelas_aptas.empty:
-        parcelas_aptas['distancia_parque_m'] = parcelas_aptas.geometry.distance(masa_parques) if not parques_proyectados.empty else 1000
-        
-        def calcular_smoothstep_inverso(x, min_val, max_val):
-            if x <= min_val: return 1.0
-            if x >= max_val: return 0.0
-            t = (x - min_val) / (max_val - min_val)
-            return 1.0 - (t * t * (3 - 2 * t))
+    parcelas_aptas['distancia_parque_m'] = parcelas_aptas.geometry.distance(masa_parques) if not parques_proyectados.empty else 1000
+    
+    def calcular_smoothstep_inverso(x, min_val, max_val):
+        if x <= min_val: return 1.0
+        if x >= max_val: return 0.0
+        t = (x - min_val) / (max_val - min_val)
+        return 1.0 - (t * t * (3 - 2 * t))
 
-        parcelas_aptas['score_reut'] = parcelas_aptas['distancia_parque_m'].apply(lambda x: calcular_smoothstep_inverso(x, 400, 1001))
+    parcelas_aptas['score_reut'] = parcelas_aptas['distancia_parque_m'].apply(lambda x: calcular_smoothstep_inverso(x, 400, 1000))
+    
+    # LÓGICA POBLACIONAL
+    scores_poblacion = []
+    poblacion_absoluta = [] 
+    rango_pob = MAX_POB_SATURACION - MIN_POB_UMBRAL
+    
+    for idx, parcela in parcelas_aptas.iterrows():
+        cuenca_100m = parcela.geometry.buffer(100)
+        edificios_en_cuenca = gpd.clip(edificios_proyectados, cuenca_100m)
+        habitantes = (edificios_en_cuenca.geometry.area.sum() * 5) / 35
+        poblacion_absoluta.append(round(habitantes))
         
-        scores_poblacion = []
-        poblacion_absoluta = [] 
-        rango_pob = MAX_POB_SATURACION - MIN_POB_UMBRAL
-        
-        for idx, parcela in parcelas_aptas.iterrows():
-            cuenca_100m = parcela.geometry.buffer(100)
-            edificios_en_cuenca = gpd.clip(edificios_proyectados, cuenca_100m)
-            habitantes = (edificios_en_cuenca.geometry.area.sum() * 5) / 35
-            poblacion_absoluta.append(round(habitantes))
-            
-            if habitantes < MIN_POB_UMBRAL: score = 0.0
-            elif habitantes >= MAX_POB_SATURACION: score = 1.0
-            else: score = (habitantes - MIN_POB_UMBRAL) / rango_pob
-            scores_poblacion.append(score)
-        
-        parcelas_aptas['score_pob'] = scores_poblacion
-        parcelas_aptas['habitantes'] = poblacion_absoluta
+        if habitantes < MIN_POB_UMBRAL: 
+            score = 0.0
+        elif habitantes >= MAX_POB_SATURACION: 
+            score = 1.0
+        else: 
+            score = (habitantes - MIN_POB_UMBRAL) / rango_pob
+        scores_poblacion.append(score)
+    
+    parcelas_aptas['score_pob'] = scores_poblacion
+    parcelas_aptas['habitantes'] = poblacion_absoluta
 
-        np.random.seed(42)
-        parcelas_aptas['score_top'] = np.random.uniform(0.0, 18.0, len(parcelas_aptas)).tolist()
-        parcelas_aptas['score_top'] = parcelas_aptas['score_top'].apply(lambda x: 1.0 if x <= 5.0 else (0.0 if x >= 15.0 else 1.0 - ((x - 5.0) / 10.0)))
-        
-        np.random.seed(101)
-        parcelas_aptas['score_aire'] = np.random.uniform(10.0, 95.0, len(parcelas_aptas)).tolist()
-        parcelas_aptas['score_aire'] = parcelas_aptas['score_aire'].apply(lambda x: 0.0 if x <= 20.0 else (1.0 if x >= 80.0 else (x - 20.0) / 60.0))
-        
-        np.random.seed(202) 
-        parcelas_aptas['score_san'] = np.random.uniform(5.0, 200.0, len(parcelas_aptas)).tolist()
-        parcelas_aptas['score_san'] = parcelas_aptas['score_san'].apply(lambda x: 1.0 if x <= 20.0 else (0.0 if x >= 150.0 else 1.0 - ((x - 20.0) / 130.0)))
-    else:
-        # Prevención de KeyError si todo el suelo está excluido
-        for col in ['distancia_parque_m', 'score_reut', 'score_pob', 'habitantes', 'score_top', 'score_aire', 'score_san']:
-            parcelas_aptas[col] = []
+    np.random.seed(42)
+    parcelas_aptas['score_top'] = np.random.uniform(0.0, 18.0, len(parcelas_aptas)).tolist()
+    parcelas_aptas['score_top'] = parcelas_aptas['score_top'].apply(lambda x: 1.0 if x <= 5.0 else (0.0 if x >= 15.0 else 1.0 - ((x - 5.0) / 10.0)))
+    
+    np.random.seed(101)
+    parcelas_aptas['score_aire'] = np.random.uniform(10.0, 95.0, len(parcelas_aptas)).tolist()
+    parcelas_aptas['score_aire'] = parcelas_aptas['score_aire'].apply(lambda x: 0.0 if x <= 20.0 else (1.0 if x >= 80.0 else (x - 20.0) / 60.0))
+    
+    np.random.seed(202) 
+    parcelas_aptas['score_san'] = np.random.uniform(5.0, 200.0, len(parcelas_aptas)).tolist()
+    parcelas_aptas['score_san'] = parcelas_aptas['score_san'].apply(lambda x: 1.0 if x <= 20.0 else (0.0 if x >= 150.0 else 1.0 - ((x - 20.0) / 130.0)))
 
     return parcelas_aptas, buffer_urbanismo, buffer_inundacion, buffer_hidrogeologia, parques_proyectados
 # ==========================================
@@ -153,54 +151,69 @@ def calcular_y_mapear(parcelas_aptas, b_urb, b_inu, b_hidro, parques, w_reut, w_
     if suma_pesos == 0: suma_pesos = 1 
     wr, wp, wt, wa, ws = w_reut/suma_pesos, w_pob/suma_pesos, w_top/suma_pesos, w_aire/suma_pesos, w_san/suma_pesos
 
-    parcelas_aptas['score_final'] = (
-        (parcelas_aptas['score_reut'] * wr) + 
-        (parcelas_aptas['score_pob'] * wp) +
-        (parcelas_aptas['score_top'] * wt) +
-        (parcelas_aptas['score_aire'] * wa) +
-        (parcelas_aptas['score_san'] * ws)
-    )
+    if not parcelas_aptas.empty:
+        parcelas_aptas['score_final'] = (
+            (parcelas_aptas['score_reut'] * wr) + 
+            (parcelas_aptas['score_pob'] * wp) +
+            (parcelas_aptas['score_top'] * wt) +
+            (parcelas_aptas['score_aire'] * wa) +
+            (parcelas_aptas['score_san'] * ws)
+        )
 
-    condicion_eliminatoria = (parcelas_aptas['score_reut']==0) | (parcelas_aptas['score_pob']==0) | (parcelas_aptas['score_top']==0) | (parcelas_aptas['score_san']==0)
-    parcelas_aptas.loc[condicion_eliminatoria, 'score_final'] = 0.0
+        condicion_eliminatoria = (parcelas_aptas['score_reut']==0) | (parcelas_aptas['score_pob']==0) | (parcelas_aptas['score_top']==0) | (parcelas_aptas['score_san']==0)
+        parcelas_aptas.loc[condicion_eliminatoria, 'score_final'] = 0.0
 
-    def color_hex(score):
-        if score == 0.0: return '#d62728'     
-        elif score < 0.4: return '#ff7f0e'    
-        elif score < 0.6: return '#bcbd22'    
-        elif score < 0.8: return '#1f77b4'    
-        else: return '#2ca02c'                
-    parcelas_aptas['color_hex'] = parcelas_aptas['score_final'].apply(color_hex)
+        def color_hex(score):
+            if score == 0.0: return '#d62728'     
+            elif score < 0.4: return '#ff7f0e'    
+            elif score < 0.6: return '#bcbd22'    
+            elif score < 0.8: return '#1f77b4'    
+            else: return '#2ca02c'                
+        parcelas_aptas['color_hex'] = parcelas_aptas['score_final'].apply(color_hex)
+        
+        # FILTRO CRÍTICO: Eliminar geometrías vacías antes de pasarlas a Folium
+        parcelas_validas = parcelas_aptas[~parcelas_aptas.geometry.is_empty & parcelas_aptas.geometry.is_valid].copy()
+        parcelas_4326 = parcelas_validas.to_crs(epsg=4326)
+    else:
+        parcelas_4326 = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
 
-    parcelas_4326 = parcelas_aptas.to_crs(epsg=4326)
-    parques_4326 = parques.to_crs(epsg=4326) if not parques.empty else None
+    if not parques.empty:
+        parques_validos = parques[~parques.geometry.is_empty & parques.geometry.is_valid]
+        parques_4326 = parques_validos.to_crs(epsg=4326) if not parques_validos.empty else None
+    else:
+        parques_4326 = None
     
-    centro_lat = parcelas_4326.geometry.centroid.y.mean()
-    centro_lon = parcelas_4326.geometry.centroid.x.mean()
+    centro_lat = parcelas_4326.geometry.centroid.y.mean() if not parcelas_4326.empty else 40.4168
+    centro_lon = parcelas_4326.geometry.centroid.x.mean() if not parcelas_4326.empty else -3.7038
 
     m = folium.Map(location=[centro_lat, centro_lon], zoom_start=13, tiles='OpenStreetMap', control_scale=True)
-
-    if not isinstance(b_urb, gpd.GeoSeries) and not b_urb.is_empty:
-        folium.GeoJson(gpd.GeoSeries([b_urb]).set_crs(parcelas_aptas.crs).to_crs(epsg=4326), 
-                       style_function=lambda x: {'fillColor': 'dimgray', 'color': 'none', 'fillOpacity': 0.6}, name="Exclusión Urbanística").add_to(m)
+#'cartodbpositron'
+    # FILTROS ESTRICTOS PARA LAS CAPAS DE EXCLUSIÓN (Evita el error 'coordinates')
+    if hasattr(b_urb, 'is_empty') and not b_urb.is_empty:
+        geom_urb = gpd.GeoSeries([b_urb]).set_crs(parcelas_aptas.crs).to_crs(epsg=4326)
+        geom_urb = geom_urb[~geom_urb.is_empty & geom_urb.is_valid]
+        if not geom_urb.empty:
+            folium.GeoJson(geom_urb, style_function=lambda x: {'fillColor': 'dimgray', 'color': 'none', 'fillOpacity': 0.6}, name="Exclusión Urbanística").add_to(m)
     
-    if not isinstance(b_inu, gpd.GeoSeries) and not b_inu.is_empty:
-        folium.GeoJson(gpd.GeoSeries([b_inu]).set_crs(parcelas_aptas.crs).to_crs(epsg=4326), 
-                       style_function=lambda x: {'fillColor': '#1f77b4', 'color': 'none', 'fillOpacity': 0.5}, name="Riesgo Inundación").add_to(m)
+    if hasattr(b_inu, 'is_empty') and not b_inu.is_empty:
+        geom_inu = gpd.GeoSeries([b_inu]).set_crs(parcelas_aptas.crs).to_crs(epsg=4326)
+        geom_inu = geom_inu[~geom_inu.is_empty & geom_inu.is_valid]
+        if not geom_inu.empty:
+            folium.GeoJson(geom_inu, style_function=lambda x: {'fillColor': '#1f77b4', 'color': 'none', 'fillOpacity': 0.5}, name="Riesgo Inundación").add_to(m)
 
     for idx, row in parcelas_4326.iterrows():
         html_popup = f"""
-        <b>Score Final:</b> {row['score_final']:.2f}<br>
-        <b>Área:</b> {row['area_m2']:.0f} m²<br>
-        <b>Población (100m):</b> {row['habitantes']} HE
+        <b>Score Final:</b> {row.get('score_final', 0):.2f}<br>
+        <b>Área:</b> {row.get('area_m2', 0):.0f} m²<br>
+        <b>Población (100m):</b> {row.get('habitantes', 0)} HE
         """
         folium.GeoJson(
             row.geometry,
-            style_function=lambda x, color=row['color_hex']: {'fillColor': color, 'color': 'black', 'weight': 1, 'fillOpacity': 0.8},
+            style_function=lambda x, color=row.get('color_hex', '#d62728'): {'fillColor': color, 'color': 'black', 'weight': 1, 'fillOpacity': 0.8},
             tooltip=html_popup
         ).add_to(m)
 
-    if parques_4326 is not None:
+    if parques_4326 is not None and not parques_4326.empty:
         folium.GeoJson(parques_4326, 
                        style_function=lambda x: {'fillColor': '#a1d99b', 'color': '#2ca02c', 'weight': 2, 'fillOpacity': 0.4}, 
                        name="Parques Existentes").add_to(m)
@@ -239,9 +252,8 @@ def calcular_y_mapear(parcelas_aptas, b_urb, b_inu, b_hidro, parques, w_reut, w_
     macro._template = Template(template)
     m.get_root().add_child(macro)
 
-    aptas_reales = len(parcelas_aptas[parcelas_aptas['score_final'] > 0])
+    aptas_reales = len(parcelas_aptas[parcelas_aptas['score_final'] > 0]) if not parcelas_aptas.empty else 0
     return m, aptas_reales, len(parcelas_aptas)
-
 # ==========================================
 # INTERFAZ DE USUARIO (FRONT-END)
 # ==========================================
