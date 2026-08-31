@@ -266,9 +266,15 @@ BASES_DE_DATOS_CCAA = {
     "Cataluña": "https://huggingface.co/datasets/BaracanBaea/TFM/resolve/main/edificios_catalu%C3%B1a.gpkg?download=true",
     "Ceuta":"https://huggingface.co/datasets/BaracanBaea/TFM/resolve/main/edificios_ceuta.gpkg?download=true",
     "Comunidad de Madrid": "https://huggingface.co/datasets/BaracanBaea/TFM/resolve/main/edificios_madrid.gpkg?download=true",
+    "Comunidad Valenciana":"https://huggingface.co/datasets/BaracanBaea/TFM/resolve/main/edificios_valencia.gpkg?download=true",
     "Extremadura":"https://huggingface.co/datasets/BaracanBaea/TFM/resolve/main/edificios_extremadura.gpkg?download=true",
     "Galicia":"https://huggingface.co/datasets/BaracanBaea/TFM/resolve/main/edificios_galicia.gpkg?download=true",
     "Islas Baleares":"https://huggingface.co/datasets/BaracanBaea/TFM/resolve/main/edificios_islasbaleares.gpkg?download=true",
+    "La Rioja":"https://huggingface.co/datasets/BaracanBaea/TFM/resolve/main/edifcios_larioja.gpkg?download=true",
+    "Melilla":"https://huggingface.co/datasets/BaracanBaea/TFM/resolve/main/edificios_melilla.gpkg?download=true",
+    "Comunidad Foral de Navarra":"https://huggingface.co/datasets/BaracanBaea/TFM/resolve/main/edificios_navarra.gpkg?download=true",
+    "Pais Vasco":"https://huggingface.co/datasets/BaracanBaea/TFM/resolve/main/pais-vasco.gpkg?download=true",
+    "Región de Murcia":"https://huggingface.co/datasets/BaracanBaea/TFM/resolve/main/edificios_murcia.gpkg?download=true",
     "Archivo Local (Pruebas)": "madrid.gpkg"
 }
 
